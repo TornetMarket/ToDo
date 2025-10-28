@@ -7,18 +7,23 @@
 
 <!-- ===============================
   STYLE (complete style.css inline)
+  Changelog (high level):
+  • Stronger modal/sheet background + global backdrop, lock background scroll while open
+  • Less “twitchy” swipe: horizontal-angle threshold + larger distance + damped transform
+  • Safer scrolling: overscroll-behavior, better sticky spacing, consistent paddings
+  • Hit targets & layout polish: reduced visual jitter, improved z-index layering
 ================================= -->
 <style>
 /* ---- Design Tokens ---- */
 :root{
   --bg: #0a192f;
   --bg-2: #0d213f;
-  --panel: rgba(255,255,255,0.06);
-  --panel-2: rgba(255,255,255,0.09);
-  --surface: rgba(255,255,255,0.12);
-  --border: rgba(255,255,255,0.12);
-  --text: #ccd6f6;
-  --muted: #9fb0d6;
+  --panel: rgba(255,255,255,0.08);
+  --panel-2: rgba(255,255,255,0.12);
+  --surface: rgba(255,255,255,0.16);
+  --border: rgba(255,255,255,0.14);
+  --text: #e6eeff;
+  --muted: #a8b8e6;
   --accent: #64ffda;
   --red: #ff5c5c;
   --amber: #ffb020;
@@ -41,6 +46,7 @@
   --focus: 0 0 0 2px color-mix(in oklab, var(--accent) 60%, transparent);
   --ring-color: color-mix(in oklab, var(--accent) 60%, transparent);
   --progress-track: rgba(255,255,255,.14);
+  --sheet-bg: color-mix(in oklab, black 25%, var(--bg-2) 75%);
 }
 
 @media (prefers-color-scheme: light) {
@@ -50,29 +56,36 @@
     --panel: rgba(0,16,40,.06);
     --panel-2: rgba(0,16,40,.08);
     --surface: rgba(0,16,40,.12);
-    --border: rgba(0,16,40,.12);
+    --border: rgba(0,16,40,.14);
     --text: #0b1b2f;
     --muted: #30507a;
     --shadow: 0 6px 30px rgba(9,30,66,.18);
     --progress-track: rgba(0,0,0,.12);
+    --sheet-bg: color-mix(in oklab, white 82%, #dfe9ff 18%);
   }
 }
 
-:root[data-theme="dark"]{
-  color-scheme: dark;
-}
-:root[data-theme="light"]{
-  color-scheme: light;
-}
+:root[data-theme="dark"]{ color-scheme: dark; }
+:root[data-theme="light"]{ color-scheme: light; }
 
 *{box-sizing:border-box}
 html,body{height:100%}
+html, body {
+  overscroll-behavior-y: none; /* stop page rubber-banding while sheets/gestures */
+}
 body{
   margin:0;
   font: 16px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji";
   background: linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
   color: var(--text);
   -webkit-tap-highlight-color: transparent;
+}
+body.no-scroll { overflow: hidden; touch-action: none; }
+
+/* Reduce overall density on very small screens */
+@media (max-width: 360px){
+  :root{ --banner-h: 118px; }
+  body{ font-size: 15px; }
 }
 
 /* ---- Layout Shell ---- */
@@ -93,27 +106,19 @@ body{
   display:grid; grid-template-columns: 1fr auto;
   gap:12px; padding: 12px 16px;
   backdrop-filter: blur(var(--blur));
-  background: linear-gradient(180deg, color-mix(in oklab, var(--panel) 60%, transparent), transparent);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--panel) 70%, transparent), transparent);
   border-bottom: 1px solid var(--border);
 }
-.banner-left{
-  display:grid; gap:10px;
-}
-.banner-hello{display:flex; align-items:center; gap:10px}
+.banner-left{ display:grid; gap:8px; min-width:0; }
+.banner-hello{display:flex; align-items:center; gap:10px; min-width:0;}
 .banner-clock{
   font-weight:700; letter-spacing:.5px; font-size:20px;
 }
-.banner-metric{
-  display:flex; gap:8px; align-items:center; color:var(--muted); font-size:13px;
-}
-.banner-carousel{
-  position:relative; height:24px; overflow:hidden; mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
-}
-.banner-slide{ position:absolute; inset:0; display:flex; align-items:center; gap:10px; transition: transform var(--slow) var(--ease); will-change: transform;}
 .badge{
   display:inline-flex; align-items:center; gap:6px;
   border:1px solid var(--border); border-radius:999px;
   padding:4px 8px; background:var(--panel);
+  white-space:nowrap;
 }
 .badge .dot{width:8px; height:8px; border-radius:50%;}
 .dot.accent{ background: var(--accent)}
@@ -121,12 +126,15 @@ body{
 .dot.amber{ background: var(--amber)}
 .dot.green{ background: var(--green)}
 
-.banner-right{
-  display:grid; place-items:center;
+.banner-carousel{
+  position:relative; height:26px; overflow:hidden;
+  mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
 }
-.ring{
-  width:84px; height:84px; position:relative;
-}
+.banner-slide{ position:absolute; inset:0; display:flex; align-items:center; gap:10px; transition: transform var(--slow) var(--ease); will-change: transform; min-width:0; }
+.banner-slide .badge{ max-width: 100%; overflow:hidden; text-overflow: ellipsis }
+
+.banner-right{ display:grid; place-items:center; }
+.ring{ width:84px; height:84px; position:relative; }
 .ring svg{ width:100%; height:100%; transform: rotate(-90deg); }
 .ring .num{
   position:absolute; inset:0; display:grid; place-items:center;
@@ -134,17 +142,16 @@ body{
 }
 
 /* ---- Segmented Tabs ---- */
-.tabs{
-  padding: 0 12px 6px;
-}
+.tabs{ padding: 0 12px 6px; }
 .segment{
   display:grid; grid-auto-flow:column; gap:8px;
   background: var(--panel); border:1px solid var(--border); border-radius: 999px; padding:6px;
 }
 .segment button{
-  appearance:none; border:0; background:transparent; color:var(--muted);
+  appearance:none; border:0; background:transparent; color: var(--muted);
   padding:10px 12px; border-radius: 999px; font-weight:650; letter-spacing:.25px;
   transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+  user-select:none;
 }
 .segment button[aria-pressed="true"]{
   background: color-mix(in oklab, var(--accent) 16%, transparent);
@@ -153,10 +160,8 @@ body{
 }
 
 /* ---- Lists / Panels ---- */
-.main{ padding: 6px 12px 96px; }
-.group{
-  margin: 14px 0;
-}
+.main{ padding: 6px 12px calc(120px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+.group{ margin: 14px 0; }
 .group h3{
   margin: 14px 4px 8px; font-size: 14px; letter-spacing:.4px; text-transform: uppercase; color: var(--muted);
 }
@@ -169,22 +174,25 @@ body{
 }
 .task{
   display:grid; grid-template-columns: auto 1fr auto; align-items: center; gap:10px;
-  padding:12px; border-bottom:1px dashed color-mix(in oklab, var(--border) 80%, transparent);
-  touch-action: pan-y; /* allow horizontal swipe */
+  padding:14px 12px; border-bottom:1px dashed color-mix(in oklab, var(--border) 80%, transparent);
+  touch-action: pan-y; /* vertical scrolling allowed */
   position:relative;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 .task:last-child{ border-bottom:0 }
 .task .chk{
-  width:26px; height:26px; border-radius:50%; display:grid; place-items:center; border:1.5px solid var(--muted); cursor:pointer; flex-shrink:0;
+  width:30px; height:30px; border-radius:50%; display:grid; place-items:center; border:1.5px solid var(--muted); cursor:pointer; flex-shrink:0;
   transition: transform var(--fast) var(--ease), border var(--fast) var(--ease), background var(--fast) var(--ease);
+  user-select:none;
 }
 .task.done .chk{ background: color-mix(in oklab, var(--accent) 25%, transparent); border-color: var(--accent)}
 .task .title{ font-weight:650; }
 .task.done .title{ text-decoration: line-through; color: var(--muted) }
 .task .meta{
-  display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; color: var(--muted); font-size:12px;
+  display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; color: var(--muted); font-size:12px;
 }
-.chip{ border:1px solid var(--border); border-radius:999px; padding:2px 8px; background:var(--panel-2) }
+.chip{ border:1px solid var(--border); border-radius:999px; padding:4px 10px; background:var(--panel-2) }
 .chip.prio-high{ border-color: color-mix(in oklab, var(--red) 50%, var(--border)); color: color-mix(in oklab, var(--red) 65%, var(--muted));}
 .chip.prio-med{ border-color: color-mix(in oklab, var(--amber) 50%, var(--border)); color: color-mix(in oklab, var(--amber) 65%, var(--muted));}
 .chip.prio-low{ border-color: color-mix(in oklab, var(--green) 50%, var(--border)); color: color-mix(in oklab, var(--green) 65%, var(--muted));}
@@ -192,18 +200,19 @@ body{
 .task .actions{ display:flex; gap:8px; align-items:center }
 .icon-btn{
   appearance:none; border:0; background: var(--panel-2); border:1px solid var(--border);
-  width:32px; height:32px; border-radius:10px; display:grid; place-items:center; color:var(--text);
+  width:36px; height:36px; border-radius:10px; display:grid; place-items:center; color:var(--text);
   transition: transform var(--fast) var(--ease), background var(--fast);
+  user-select:none;
 }
 .icon-btn:active{ transform: translateY(1px) scale(.98) }
 .icon-btn[aria-label="Delete"]{ color: var(--red) }
 
 /* Swipe feedback */
 .task.swiping .swipe-bg{
-  position:absolute; inset:0; z-index:-1; opacity:.8;
+  position:absolute; inset:0; z-index:-1; opacity:.85;
 }
-.swipe-bg.complete{ background: color-mix(in oklab, var(--green) 25%, transparent)}
-.swipe-bg.delete{ background: color-mix(in oklab, var(--red) 25%, transparent)}
+.swipe-bg.complete{ background: color-mix(in oklab, var(--green) 22%, transparent)}
+.swipe-bg.delete{ background: color-mix(in oklab, var(--red) 22%, transparent)}
 
 /* ---- Quick Add ---- */
 .quickadd{
@@ -221,21 +230,22 @@ body{
 .input input::placeholder{ color: var(--muted)}
 .btn{
   appearance:none; border:0; background: var(--accent); color: #001b16; font-weight:800;
-  padding: 10px 14px; border-radius: 999px; cursor:pointer;
+  padding: 12px 14px; border-radius: 999px; cursor:pointer;
   transition: transform var(--fast) var(--ease), filter var(--fast);
+  user-select:none;
 }
 .btn:active{ transform: translateY(1px) scale(.98) }
 .btn.ghost{
   background: transparent; color: var(--text); border: 1px solid var(--border)
 }
-.btn.small{ padding: 8px 10px; font-size: 14px }
+.btn.small{ padding: 9px 12px; font-size: 14px }
 .btn.block{ display:block; width:100% }
 
 /* ---- Bottom Thumb Bar ---- */
 .thumbbar{
   position: sticky; bottom:0; z-index: 12;
   height: var(--thumbbar-h);
-  background: linear-gradient(180deg, transparent, color-mix(in oklab, var(--panel) 65%, transparent));
+  background: linear-gradient(180deg, color-mix(in oklab, var(--panel) 65%, transparent), color-mix(in oklab, var(--panel) 85%, transparent));
   border-top: 1px solid var(--border);
   display:grid; grid-auto-flow:column; align-items:center; justify-content: space-around;
   backdrop-filter: blur(var(--blur));
@@ -243,6 +253,7 @@ body{
 .thumbbar button{
   appearance:none; background:transparent; border:0; color: var(--muted);
   display:grid; place-items:center; gap:4px; font-size: 11px;
+  user-select:none;
 }
 .thumbbar button[aria-pressed="true"]{ color: var(--text) }
 .thumbbar svg{ width:22px; height:22px }
@@ -259,14 +270,24 @@ body{
 .fab:active{ transform: translateY(1px) scale(.98) }
 .fab svg{ width:26px; height:26px }
 
+/* ---- Global Backdrop for Sheets ---- */
+.backdrop{
+  position: fixed; inset:0; z-index: 35;
+  background: rgba(0,0,0,.48);
+  backdrop-filter: blur(6px);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--med) var(--ease);
+}
+.backdrop.open{ opacity:1; pointer-events:auto; }
+
 /* ---- Sheets / Modals ---- */
 .sheet{
   position: fixed; inset: auto 0 0 0; transform: translateY(105%);
-  background: linear-gradient(180deg, color-mix(in oklab, var(--panel) 80%, transparent), var(--panel));
+  background: var(--sheet-bg);
   border-top: 1px solid var(--border);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  box-shadow: 0 -16px 40px rgba(0,0,0,.35);
-  max-height: 88svh; overflow:auto; z-index: 40;
+  box-shadow: 0 -16px 40px rgba(0,0,0,.55);
+  max-height: 90svh; overflow:auto; z-index: 40;
   transition: transform var(--med) var(--ease);
 }
 .sheet.open{ transform: translateY(0) }
@@ -274,10 +295,10 @@ body{
   position: sticky; top:0; z-index:1;
   display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding: 14px 16px;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--panel) 75%, transparent), transparent);
+  background: color-mix(in oklab, var(--sheet-bg) 92%, transparent);
   border-bottom: 1px solid var(--border);
 }
-.sheet .content{ padding: 12px 16px 24px; display:grid; gap:12px }
+.sheet .content{ padding: 12px 16px 28px; display:grid; gap:12px }
 .field{ display:grid; gap:8px }
 .field label{ font-size:13px; color: var(--muted) }
 .field input[type="text"],
@@ -285,23 +306,20 @@ body{
 .field input[type="datetime-local"],
 .field textarea,
 .select{
-  width:100%; border:1px solid var(--border); background: var(--panel-2); color: var(--text);
+  width:100%; border:1px solid var(--border); background: color-mix(in oklab, var(--panel-2) 65%, var(--sheet-bg) 35%); color: var(--text);
   padding: 12px 12px; border-radius: 12px; outline: none; transition: box-shadow var(--fast);
 }
-.field textarea{ min-height: 84px; resize: vertical }
+.field textarea{ min-height: 92px; resize: vertical }
 .field input:focus, .select:focus, textarea:focus{ box-shadow: var(--focus) }
 
 /* Subtasks */
 .subtasks{ display:grid; gap:8px }
 .subtask{
   display:grid; grid-template-columns: auto 1fr auto; gap:8px; align-items:center;
-  background: var(--panel); border:1px dashed var(--border); border-radius: 10px; padding:8px 10px;
+  background: color-mix(in oklab, var(--panel) 65%, var(--sheet-bg) 35%); border:1px dashed var(--border); border-radius: 10px; padding:8px 10px;
 }
 .subtask input[type="text"]{ background:transparent; border:0; color:var(--text) }
 .drag{ cursor: grab; opacity:.8 }
-
-/* Project/Tag chips in editor */
-.row{ display:flex; gap:8px; flex-wrap: wrap }
 
 /* Toasts */
 .toast-wrap{
@@ -331,9 +349,9 @@ body{
 
 /* High contrast mode */
 :root[data-contrast="high"]{
-  --panel: color-mix(in oklab, black 20%, white 0%);
-  --panel-2: color-mix(in oklab, black 15%, white 0%);
-  --border: color-mix(in oklab, var(--accent) 35%, black 0%);
+  --panel: color-mix(in oklab, black 18%, white 0%);
+  --panel-2: color-mix(in oklab, black 14%, white 0%);
+  --border: color-mix(in oklab, var(--accent) 40%, black 0%);
 }
 
 /* Reduce motion */
@@ -413,9 +431,7 @@ body{
   </section>
 
   <!-- ========== Main Content Lists ========== -->
-  <section class="main" id="mainContent">
-    <!-- Dynamic groups render here -->
-  </section>
+  <section class="main" id="mainContent"></section>
 
   <!-- ========== Bottom Thumb Bar ========== -->
   <nav class="thumbbar" role="navigation" aria-label="Primary">
@@ -423,36 +439,39 @@ body{
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M9 22V12h6v10"/></svg>
       <span>Home</span>
     </button>
-    <button id="navAdd" aria-label="Add">
+    <button id="navAdd" aria-label="Add" data-nodrag>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
       <span>Add</span>
     </button>
-    <button id="navSearch" aria-label="Search">
+    <button id="navSearch" aria-label="Search" data-nodrag>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
       <span>Search</span>
     </button>
-    <button id="navSettings" aria-label="Settings">
+    <button id="navSettings" aria-label="Settings" data-nodrag>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.08a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.08a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.03 3.3l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.08a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .66.39 1.26 1 1.51H21a2 2 0 1 1 0 4h-.08a1.65 1.65 0 0 0-1.51 1Z"/></svg>
       <span>Settings</span>
     </button>
   </nav>
 
   <!-- ========== FAB ========== -->
-  <button class="fab" id="fab" aria-label="Add task quickly">
+  <button class="fab" id="fab" aria-label="Add task quickly" data-nodrag>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
   </button>
 </main>
 
+<!-- ========== Global Backdrop for Sheets ========== -->
+<div class="backdrop" id="backdrop"></div>
+
 <!-- ========== Toasts ========== -->
 <div class="toast-wrap" id="toastWrap" aria-live="assertive"></div>
 
-<!-- ========== Sheets: Task Editor, Filters, Projects/Tags, Settings, Insights, Import/Export ========== -->
+<!-- ========== Sheets ========== -->
 <section class="sheet" id="editorSheet" aria-modal="true" role="dialog" aria-label="Task editor">
   <header>
     <strong id="editorTitle">New Task</strong>
     <div class="right">
-      <button class="btn small ghost" data-close="#editorSheet">Close</button>
-      <button class="btn small" id="saveTaskBtn">Save</button>
+      <button class="btn small ghost" data-close="#editorSheet" data-nodrag>Close</button>
+      <button class="btn small" id="saveTaskBtn" data-nodrag>Save</button>
     </div>
   </header>
   <div class="content">
@@ -468,7 +487,7 @@ body{
       <label for="tDue">Due date & time</label>
       <input id="tDue" type="datetime-local" />
     </div>
-    <div class="row">
+    <div class="row" style="display:flex; gap:12px; flex-wrap:wrap">
       <div class="field" style="min-width:140px; flex:1">
         <label for="tPriority">Priority</label>
         <select id="tPriority" class="select">
@@ -484,7 +503,7 @@ body{
         <datalist id="projectList"></datalist>
       </div>
     </div>
-    <div class="row">
+    <div class="row" style="display:flex; gap:12px; flex-wrap:wrap">
       <div class="field" style="min-width:140px; flex:1">
         <label for="tTags">Tags (comma-separated)</label>
         <input id="tTags" type="text" placeholder="work, errands, home…" />
@@ -494,7 +513,7 @@ body{
         <input id="tEstimate" type="number" min="0" step="5" placeholder="30" />
       </div>
     </div>
-    <div class="row">
+    <div class="row" style="display:flex; gap:12px; flex-wrap:wrap">
       <div class="field" style="min-width:140px; flex:1">
         <label for="tReminder">Reminder (min before)</label>
         <input id="tReminder" type="number" min="0" step="5" placeholder="10" />
@@ -520,20 +539,20 @@ body{
     <div class="field">
       <label>Subtasks</label>
       <div class="subtasks" id="subtasks"></div>
-      <button class="btn small ghost" id="addSubtaskBtn">+ Add subtask</button>
+      <button class="btn small ghost" id="addSubtaskBtn" data-nodrag>+ Add subtask</button>
     </div>
 
-    <div class="row">
-      <button class="btn small ghost" id="snooze1">Snooze +1h</button>
-      <button class="btn small ghost" id="snoozeTonight">Tonight 8pm</button>
-      <button class="btn small ghost" id="snoozeTomorrow">Tomorrow 9am</button>
-      <button class="btn small ghost" id="snoozeNextWeek">Next Mon 9am</button>
+    <div class="row" style="display:flex; gap:8px; flex-wrap:wrap">
+      <button class="btn small ghost" id="snooze1" data-nodrag>Snooze +1h</button>
+      <button class="btn small ghost" id="snoozeTonight" data-nodrag>Tonight 8pm</button>
+      <button class="btn small ghost" id="snoozeTomorrow" data-nodrag>Tomorrow 9am</button>
+      <button class="btn small ghost" id="snoozeNextWeek" data-nodrag>Next Mon 9am</button>
     </div>
 
     <div class="hr"></div>
 
-    <div class="row">
-      <button class="btn small ghost" id="deleteTaskBtn" aria-label="Delete task">Delete</button>
+    <div class="row" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+      <button class="btn small ghost" id="deleteTaskBtn" aria-label="Delete task" data-nodrag>Delete</button>
       <div class="small" id="taskMeta"></div>
     </div>
   </div>
@@ -543,35 +562,35 @@ body{
   <header>
     <strong>Settings</strong>
     <div class="right">
-      <button class="btn small ghost" data-close="#settingsSheet">Close</button>
+      <button class="btn small ghost" data-close="#settingsSheet" data-nodrag>Close</button>
     </div>
   </header>
   <div class="content">
     <div class="field">
       <label>Theme</label>
-      <div class="row">
-        <button class="btn small ghost" data-theme="system">System</button>
-        <button class="btn small ghost" data-theme="light">Light</button>
-        <button class="btn small ghost" data-theme="dark">Dark</button>
+      <div class="row" style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn small ghost" data-theme="system" data-nodrag>System</button>
+        <button class="btn small ghost" data-theme="light" data-nodrag>Light</button>
+        <button class="btn small ghost" data-theme="dark" data-nodrag>Dark</button>
       </div>
     </div>
-    <div class="row">
+    <div class="row" style="display:flex; gap:12px; flex-wrap:wrap">
       <div class="field" style="min-width:140px; flex:1">
         <label>High Contrast</label>
-        <button class="btn small ghost" id="toggleContrast">Toggle</button>
+        <button class="btn small ghost" id="toggleContrast" data-nodrag>Toggle</button>
       </div>
       <div class="field" style="min-width:140px; flex:1">
         <label>Time Format</label>
-        <div class="row">
-          <button class="btn small ghost" data-timefmt="12h">12h</button>
-          <button class="btn small ghost" data-timefmt="24h">24h</button>
+        <div class="row" style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn small ghost" data-timefmt="12h" data-nodrag>12h</button>
+          <button class="btn small ghost" data-timefmt="24h" data-nodrag>24h</button>
         </div>
       </div>
       <div class="field" style="min-width:140px; flex:1">
         <label>Week Starts On</label>
-        <div class="row">
-          <button class="btn small ghost" data-weekstart="1">Mon</button>
-          <button class="btn small ghost" data-weekstart="0">Sun</button>
+        <div class="row" style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn small ghost" data-weekstart="1" data-nodrag>Mon</button>
+          <button class="btn small ghost" data-weekstart="0" data-nodrag>Sun</button>
         </div>
       </div>
     </div>
@@ -580,23 +599,23 @@ body{
 
     <div class="field">
       <label>Data</label>
-      <div class="row">
-        <button class="btn small" id="exportBtn">Export JSON</button>
-        <button class="btn small ghost" id="importBtn">Import JSON</button>
+      <div class="row" style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn small" id="exportBtn" data-nodrag>Export JSON</button>
+        <button class="btn small ghost" id="importBtn" data-nodrag>Import JSON</button>
         <input id="importFile" type="file" accept="application/json" class="hidden" />
       </div>
-      <div class="row">
-        <button class="btn small ghost" data-backup="1">Backup → Slot 1</button>
-        <button class="btn small ghost" data-backup="2">Backup → Slot 2</button>
-        <button class="btn small ghost" data-backup="3">Backup → Slot 3</button>
+      <div class="row" style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn small ghost" data-backup="1" data-nodrag>Backup → Slot 1</button>
+        <button class="btn small ghost" data-backup="2" data-nodrag>Backup → Slot 2</button>
+        <button class="btn small ghost" data-backup="3" data-nodrag>Backup → Slot 3</button>
       </div>
-      <div class="row">
-        <button class="btn small ghost" data-restore="1">Restore ← Slot 1</button>
-        <button class="btn small ghost" data-restore="2">Restore ← Slot 2</button>
-        <button class="btn small ghost" data-restore="3">Restore ← Slot 3</button>
+      <div class="row" style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn small ghost" data-restore="1" data-nodrag>Restore ← Slot 1</button>
+        <button class="btn small ghost" data-restore="2" data-nodrag>Restore ← Slot 2</button>
+        <button class="btn small ghost" data-restore="3" data-nodrag>Restore ← Slot 3</button>
       </div>
-      <div class="row">
-        <button class="btn small" id="resetBtn" style="background:var(--red); color:white; border:1px solid color-mix(in oklab, var(--red) 50%, black)">Reset All</button>
+      <div class="row" style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn small" id="resetBtn" style="background:var(--red); color:white; border:1px solid color-mix(in oklab, var(--red) 50%, black)" data-nodrag>Reset All</button>
       </div>
     </div>
 
@@ -614,7 +633,7 @@ body{
   <header>
     <strong>Projects & Tags</strong>
     <div class="right">
-      <button class="btn small ghost" data-close="#projectSheet">Close</button>
+      <button class="btn small ghost" data-close="#projectSheet" data-nodrag>Close</button>
     </div>
   </header>
   <div class="content" id="projectContent"></div>
@@ -625,17 +644,11 @@ body{
 ================================= -->
 <script>
 /* ===========================================================
-  TASKS — Mobile Task Manager
-  Vanilla JS. Single-file app with localStorage persistence.
-  Major sections:
-    1) State / Storage / Utilities
-    2) Rendering (Banner, Lists, Tabs)
-    3) Editor Sheet & CRUD
-    4) Gestures (Swipe, Reorder)
-    5) Search / Filters / Views
-    6) Reminders / Snooze / Recurrence
-    7) Settings / Import-Export / Backups / Insights
-    8) Boot
+  TASKS — Mobile Task Manager (Stability Patch)
+  Fixes:
+    • Sheet visibility: stronger background, global backdrop, scroll lock
+    • Gesture stability: angle threshold, larger distance, velocity reduction
+    • Layout: consistent paddings, overscroll containment, safer z-index
 =========================================================== */
 
 /* ---------- 1) STATE / STORAGE / UTILITIES ---------- */
@@ -702,8 +715,7 @@ function seedState(){
     ],
     projects: [],
     tags: ["demo","home","bills"],
-    // insights: lightweight ledger of completions by day
-    history: {}  // key: yyyy-mm-dd -> count
+    history: {}  // yyyy-mm-dd -> count
   };
 }
 
@@ -766,22 +778,19 @@ function render(){
 }
 
 function renderBanner(){
-  // Clock
   const d = new Date();
   $("#bannerClock").textContent = prefs.timeFormat==='24h' ? fmt.time24(d) : fmt.time12(d);
   $("#hoursLeft").textContent = `${Math.ceil(hoursLeftToday())}h left`;
 
-  // Next up & counts
   const {todayDueCount, overdueCount, nextUp} = computeCounts();
   $("#dueToday").textContent = todayDueCount;
   $("#overdueCount").textContent = overdueCount;
   $("#nextUp").textContent = nextUp ? `${nextUp.title} (${fmt.rel(nextUp.due)})` : "Nothing scheduled";
 
-  // Progress ring
   const {todayDone, todayTotal} = computeTodayProgress();
   const pct = todayTotal ? Math.round((todayDone/todayTotal)*100) : 0;
   $("#progressPct").textContent = `${pct}%`;
-  const C = 2*Math.PI*44; // circumference
+  const C = 2*Math.PI*44;
   const off = C*(1 - pct/100);
   $("#progressArc").setAttribute("stroke-dashoffset", off.toFixed(2));
 }
@@ -848,7 +857,6 @@ function groupEl(title, items){
   list.className = 'panel';
   list.setAttribute('role','list');
 
-  // sort: overdue/soonest by due, else by priority, then by order
   items.sort((a,b)=>{
     const ad = a.due ?? Infinity, bd = b.due ?? Infinity;
     if(ad!==bd) return ad-bd;
@@ -903,7 +911,7 @@ function taskRow(t){
   }
   if(t.priority && t.priority!=='none'){
     const chip = document.createElement('span'); chip.className = 'chip prio-'+t.priority; chip.textContent = '!' + t.priority;
-    on(chip,'click',()=>{
+    on(chip,'click',()=> {
       cyclePriority(t.id);
     });
     meta.append(chip);
@@ -929,7 +937,8 @@ function taskRow(t){
     const c = document.createElement('button');
     c.className='btn small ghost';
     c.textContent=label;
-    on(c,'click',()=> applySnoozeQuick(t.id, label));
+    c.setAttribute('data-nodrag','');
+    on(c,'click',(ev)=> { ev.stopPropagation(); applySnoozeQuick(t.id, label); });
     snooze.append(c);
   });
 
@@ -939,10 +948,10 @@ function taskRow(t){
 
   const actions = document.createElement('div');
   actions.className='actions';
-  const edit = document.createElement('button'); edit.className='icon-btn'; edit.setAttribute('aria-label','Edit'); edit.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
-  on(edit,'click',()=> openEditor(t.id));
-  const del = document.createElement('button'); del.className='icon-btn'; del.setAttribute('aria-label','Delete'); del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
-  on(del,'click',()=> deleteTask(t.id, true));
+  const edit = document.createElement('button'); edit.className='icon-btn'; edit.setAttribute('aria-label','Edit'); edit.setAttribute('data-nodrag',''); edit.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
+  on(edit,'click',(e)=> { e.stopPropagation(); openEditor(t.id); });
+  const del = document.createElement('button'); del.className='icon-btn'; del.setAttribute('aria-label','Delete'); del.setAttribute('data-nodrag',''); del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
+  on(del,'click',(e)=> { e.stopPropagation(); deleteTask(t.id, true); });
 
   actions.append(edit, del);
   row.append(actions);
@@ -956,19 +965,19 @@ function projectsView(){
   wrap.innerHTML = `<h3>Projects</h3>`;
   const panel = document.createElement('div'); panel.className='panel'; panel.id='projectsPanel';
   const body = document.createElement('div'); body.style.padding='12px';
-  const input = document.createElement('div'); input.className='row';
+  const input = document.createElement('div'); input.className='row'; input.style.display='flex'; input.style.gap='8px'; input.style.flexWrap='wrap';
   input.innerHTML = `
     <input id="projName" class="select" placeholder="New project name…" />
-    <button class="btn small" id="addProjectBtn">Add</button>
+    <button class="btn small" id="addProjectBtn" data-nodrag>Add</button>
   `;
   body.append(input);
-  const list = document.createElement('div'); list.style.marginTop='12px'; list.className='row';
+  const list = document.createElement('div'); list.style.marginTop='12px'; list.className='row'; list.style.display='flex'; list.style.flexWrap='wrap'; list.style.gap='8px';
 
   state.projects.sort((a,b)=> (a.order??0)-(b.order??0)).forEach(p=>{
     const chip = document.createElement('span'); chip.className='chip'; chip.textContent=p.name;
     on(chip,'click',()=> filterByProject(p.id));
-    const rm = document.createElement('button'); rm.className='btn small ghost'; rm.textContent='×'; on(rm,'click',()=> removeProject(p.id));
-    const box = document.createElement('div'); box.className='row'; box.style.alignItems='center';
+    const rm = document.createElement('button'); rm.className='btn small ghost'; rm.textContent='×'; rm.setAttribute('data-nodrag',''); on(rm,'click',()=> removeProject(p.id));
+    const box = document.createElement('div'); box.className='row'; box.style.display='flex'; box.style.alignItems='center'; box.style.gap='6px';
     box.append(chip, rm);
     list.append(box);
   });
@@ -982,19 +991,19 @@ function projectsView(){
   tg.innerHTML = `<h3>Tags</h3>`;
   const tpanel = document.createElement('div'); tpanel.className='panel';
   const tbody = document.createElement('div'); tbody.style.padding='12px';
-  const tinp = document.createElement('div'); tinp.className='row';
+  const tinp = document.createElement('div'); tinp.className='row'; tinp.style.display='flex'; tinp.style.gap='8px'; tinp.style.flexWrap='wrap';
   tinp.innerHTML = `
     <input id="tagName" class="select" placeholder="New tag…" />
-    <button class="btn small" id="addTagBtn">Add</button>
+    <button class="btn small" id="addTagBtn" data-nodrag>Add</button>
   `;
   tbody.append(tinp);
 
-  const tlist = document.createElement('div'); tlist.style.marginTop='12px'; tlist.className='row';
+  const tlist = document.createElement('div'); tlist.style.marginTop='12px'; tlist.className='row'; tlist.style.display='flex'; tlist.style.flexWrap='wrap'; tlist.style.gap='8px';
   state.tags.sort().forEach(tag=>{
     const chip = document.createElement('span'); chip.className='chip'; chip.textContent='#'+tag;
     on(chip,'click',()=> filterByTag(tag));
-    const rm = document.createElement('button'); rm.className='btn small ghost'; rm.textContent='×'; on(rm,'click',()=> removeTag(tag));
-    const box = document.createElement('div'); box.className='row'; box.style.alignItems='center';
+    const rm = document.createElement('button'); rm.className='btn small ghost'; rm.textContent='×'; rm.setAttribute('data-nodrag',''); on(rm,'click',()=> removeTag(tag));
+    const box = document.createElement('div'); box.className='row'; box.style.display='flex'; box.style.alignItems='center'; box.style.gap='6px';
     box.append(chip, rm); tlist.append(box);
   });
   tbody.append(tlist);
@@ -1025,7 +1034,7 @@ function projectsView(){
 
   return wrap;
 }
-function tagsView(){ return projectsView(); } // shared simple manager
+function tagsView(){ return projectsView(); }
 
 function refreshDatalist(){
   const dl = $("#projectList"); if(!dl) return;
@@ -1086,7 +1095,6 @@ function openEditor(id=null){
   $("#editorTitle").textContent = id ? "Edit Task" : "New Task";
   $("#deleteTaskBtn").style.display = id ? 'inline-flex':'none';
   const t = id ? state.tasks.find(x=>x.id===id) : mkTask({});
-  // populate
   $("#tTitle").value = t.title||'';
   $("#tNotes").value = t.notes||'';
   $("#tDue").value = t.due ? new Date(t.due).toISOString().slice(0,16) : '';
@@ -1098,12 +1106,8 @@ function openEditor(id=null){
   $("#tRepeat").value = t.repeat?.type || 'none';
   $("#tEveryN").value = t.repeat?.everyNDays ?? '';
   $("#repeatNDaysField").style.display = (t.repeat?.type==='every') ? 'grid' : 'none';
-  // subtasks
   const sub = $("#subtasks"); sub.innerHTML='';
-  (t.subtasks||[]).forEach(s=>{
-    const el = subtaskEl(s);
-    sub.append(el);
-  });
+  (t.subtasks||[]).forEach(s=> sub.append(subtaskEl(s)));
   $("#taskMeta").textContent = id ? `Created ${new Date(t.createdAt).toLocaleString()} • Updated ${new Date(t.updatedAt).toLocaleString()}` : '';
 
   openSheet(editor);
@@ -1191,43 +1195,66 @@ function applySnoozeQuick(id, label){
   t.updatedAt = Date.now(); saveState(); render(); toast("Snoozed");
 }
 
-/* ---------- 4) GESTURES (Swipe, Reorder minimal) ---------- */
+/* ---------- 4) GESTURES (Swipe with stability) ---------- */
 function enableSwipe(el, bg, id){
-  let sx=0, dx=0, swiping=false;
+  let sx=0, sy=0, dx=0, dy=0, swiping=false, active=false;
+
+  function isFromNoDrag(target){
+    return target.closest('[data-nodrag]') != null;
+  }
+
   function start(e){
-    sx = (e.touches? e.touches[0].clientX : e.clientX); dx=0;
+    if(isFromNoDrag(e.target)) return;
+    const p = getPoint(e);
+    sx = p.x; sy = p.y; dx=0; dy=0; active=true;
   }
   function move(e){
-    if(sx===0) return;
-    const x = (e.touches? e.touches[0].clientX : e.clientX);
-    dx = x - sx;
-    if(Math.abs(dx)>8){ swiping=true; el.classList.add('swiping'); }
-    if(swiping){
-      el.style.transform = `translateX(${dx}px)`;
-      if(dx>0){ bg.className='swipe-bg delete'; } else { bg.className='swipe-bg complete'; }
+    if(!active) return;
+    const p = getPoint(e);
+    dx = p.x - sx; dy = p.y - sy;
+
+    // Require a clear horizontal intent and distance
+    if(!swiping){
+      if(Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy) * 1.3){
+        swiping = true; el.classList.add('swiping');
+      } else { return; }
     }
+
+    // While swiping, damp the translation so it feels controlled
+    const damp = Math.sign(dx) * Math.min(Math.abs(dx), 140);
+    el.style.transform = `translateX(${damp}px)`;
+    if(damp>0){ bg.className='swipe-bg delete'; } else { bg.className='swipe-bg complete'; }
+
+    // prevent scrolling while actively swiping
+    if(e.cancelable) e.preventDefault();
   }
   function end(){
     if(swiping){
-      if(dx < -80){ // complete
+      const threshold = 90;
+      if(dx < -threshold){ // complete
         el.style.transition = 'transform 160ms var(--ease)'; el.style.transform='translateX(-120%)';
         setTimeout(()=> toggleDone(id),160);
-      } else if(dx > 80){ // delete
+      } else if(dx > threshold){ // delete
         el.style.transition = 'transform 160ms var(--ease)'; el.style.transform='translateX(120%)';
         setTimeout(()=> deleteTask(id, true),160);
       } else {
         el.style.transition = 'transform 160ms var(--ease)'; el.style.transform='translateX(0)';
       }
     }
-    sx=0; dx=0; swiping=false;
+    sx=0; sy=0; dx=0; dy=0; swiping=false; active=false;
     setTimeout(()=>{ el.classList.remove('swiping'); el.style.transition=''; },200);
   }
+
   on(el,'touchstart',start,{passive:true});
-  on(el,'touchmove',move,{passive:true});
+  on(el,'touchmove',move,{passive:false});
   on(el,'touchend',end);
   on(el,'mousedown',start);
   on(el,'mousemove',move);
   on(el,'mouseup',end);
+}
+function getPoint(e){
+  if(e.touches && e.touches[0]) return {x: e.touches[0].clientX, y: e.touches[0].clientY};
+  return {x: e.clientX, y: e.clientY};
 }
 
 /* ---------- 5) SEARCH / FILTERS / VIEWS ---------- */
@@ -1256,19 +1283,16 @@ function parseQuick(input){
   let due = null, priority='none', tags=[], projectId=null;
 
   const tokens = input.split(' ').filter(Boolean);
-  const now = new Date();
   for(const tok of tokens){
     if(tok.startsWith('@')){
       const rest = tok.slice(1);
-      // naive parsing: "tomorrow", "today", "HH:MM" optionally combined (we also accept tomorrow and time separate)
       if(rest==='today'){ const d=new Date(); d.setHours(17,0,0,0); due=d.getTime(); }
       else if(rest==='tomorrow'){ const d=new Date(); d.setDate(d.getDate()+1); d.setHours(9,0,0,0); due=d.getTime(); }
-      else if(/^\d{1,2}(:\d{2})?$/.test(rest)){ // time today
+      else if(/^\d{1,2}(:\d{2})?$/.test(rest)){
         const [hh,mm='00'] = rest.split(':'); const d=new Date();
         d.setHours(+hh, +mm, 0, 0); if(d.getTime()<Date.now()) d.setDate(d.getDate()+1);
         due = d.getTime();
       } else {
-        // try Date.parse fallback
         const d = Date.parse(rest);
         if(!isNaN(d)) due = d;
       }
@@ -1315,7 +1339,7 @@ function tickReminders(){
     const rem = (t.reminderOffsetMin ?? prefs.defaultReminderOffsetMin);
     if(rem==null) continue;
     const fire = t.due - rem*60000;
-    if(fire <= now && fire > now - 60*1000){ // fired this minute
+    if(fire <= now && fire > now - 60*1000){
       notifyTask(t);
     }
   }
@@ -1325,7 +1349,6 @@ function notifyTask(t){
     {label:"Snooze 10m", onClick:()=>{ t.due = (t.due||Date.now()) + 10*60000; t.updatedAt=Date.now(); saveState(); render(); }},
     {label:"Open", onClick:()=> openEditor(t.id)},
   ]);
-  // subtle chime via Web Audio API
   try{
     const ctx = new (window.AudioContext||window.webkitAudioContext)();
     const o = ctx.createOscillator(); const g = ctx.createGain();
@@ -1347,31 +1370,46 @@ function handleRecurrence(t){
     next.setDate(next.getDate()+n);
   }
   const clone = mkTask(Object.assign({}, t, {
-    id: uid(), done:false, createdAt: Date.now(), updatedAt: Date.now(), order: Date.now(), subtasks: (t.subtasks||[]).map(s=> ({id:uid(), title:s.title, done:false})), 
-    // keep fields:
+    id: uid(), done:false, createdAt: Date.now(), updatedAt: Date.now(), order: Date.now(), subtasks: (t.subtasks||[]).map(s=> ({id:uid(), title:s.title, done:false})),
     title: t.title, notes: t.notes, priority: t.priority, tags: [...(t.tags||[])], projectId: t.projectId, estimateMin: t.estimateMin, reminderOffsetMin: t.reminderOffsetMin, repeat: t.repeat,
     due: next.getTime()
   }));
   state.tasks.push(clone);
 }
-function addHistory(key){
-  state.history[key] = (state.history[key]||0) + 1;
-}
+function addHistory(key){ state.history[key] = (state.history[key]||0) + 1; }
 
 /* ---------- 7) SETTINGS / IMPORT-EXPORT / BACKUPS / INSIGHTS ---------- */
-function openSheet(el){ el.classList.add('open'); }
-function closeSheet(el){ el.classList.remove('open'); }
+function openSheet(el){
+  el.classList.add('open');
+  $("#backdrop").classList.add('open');
+  document.body.classList.add('no-scroll');
+}
+function closeSheet(el){
+  el.classList.remove('open');
+  // If no other sheet is open, hide backdrop + unlock scroll
+  setTimeout(()=>{
+    const anyOpen = $$('.sheet').some(s=> s.classList.contains('open'));
+    if(!anyOpen){
+      $("#backdrop").classList.remove('open');
+      document.body.classList.remove('no-scroll');
+    }
+  },0);
+}
+
+$("#backdrop").addEventListener('click', ()=>{
+  $$('.sheet.open').forEach(s=> s.classList.remove('open'));
+  $("#backdrop").classList.remove('open');
+  document.body.classList.remove('no-scroll');
+});
 
 $$('[data-close]').forEach(b=> on(b,'click',()=> closeSheet($(b.dataset.close))));
 on($("#navSettings"),'click',()=> openSheet($("#settingsSheet")));
-function openProjectSheet(){ openSheet($("#projectSheet")); }
+function openProjectSheet(){ $("#projectContent").innerHTML=''; $("#projectContent").append(projectsView()); openSheet($("#projectSheet")); }
 
 // Editor sheet wires
 on($("#saveTaskBtn"),'click',saveEditor);
 on($("#deleteTaskBtn"),'click',()=> { if(editingId){ deleteTask(editingId); closeSheet(editor); }});
-on($("#addSubtaskBtn"),'click',()=>{
-  $("#subtasks").append(subtaskEl({id:uid(), title:'', done:false}));
-});
+on($("#addSubtaskBtn"),'click',()=>{ $("#subtasks").append(subtaskEl({id:uid(), title:'', done:false})); });
 on($("#tRepeat"),'change', (e)=> $("#repeatNDaysField").style.display = (e.target.value==='every') ? 'grid' : 'none');
 
 // Snooze buttons in editor
@@ -1448,10 +1486,8 @@ function renderInsights(){
 }
 
 /* ---------- 8) BOOT ---------- */
-function tick(){
-  renderBanner();
-}
-let bannerTimer, reminderTimer;
+function tick(){ renderBanner(); }
+let bannerTimer;
 
 function boot(){
   applyTheme();
@@ -1459,13 +1495,12 @@ function boot(){
   renderInsights();
   bannerTimer = setInterval(()=>{ tick(); }, 1000);
   setInterval(rotateBanner, 6500);
-  reminderTimer = setInterval(tickReminders, 30000); // check every 30s
+  setInterval(tickReminders, 30000);
 }
 boot();
 
 /* ---------- Project/Tag utilities ---------- */
 function removeProject(id){
-  // Detach tasks from this project
   state.tasks.forEach(t=>{ if(t.projectId===id) t.projectId=null; });
   state.projects = state.projects.filter(p=>p.id!==id);
   saveState(); render(); toast("Project removed");
@@ -1482,15 +1517,8 @@ on(document,'keydown', (e)=>{
   if((e.key==='n' || e.key==='N') && !editor.classList.contains('open')){ openEditor(); }
 });
 
-/* Open editor via nav Add or FAB */
-on($("#navAdd"),'click', ()=> openEditor());
-
-/* Sheet openers */
+/* Sheet opener for Projects/Tags view */
 function openProjectSheet(){ $("#projectContent").innerHTML=''; $("#projectContent").append(projectsView()); openSheet($("#projectSheet")); }
-
-/* Utility to open/close generic sheets already handled by data-close */
-
-/* ---------- END ---------- */
 </script>
 
 </body>
